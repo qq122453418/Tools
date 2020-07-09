@@ -1,0 +1,18 @@
+{
+	"name": "tools/rurl",
+	"description": "CURL request url(curl 请求 url)",
+	"keywords": ["curl","Rurl","url","访问url","请求url"],
+	"type": "tool-package",
+	"license": "BSD-3-Clause",
+	"authors": [
+		{
+			"name": "xiaofuxing",
+			"email": "122453418@qq.com"
+		}
+	],
+	"require": {
+		"php": ">=5.3"
+	},
+	"autoload": {
+	}
+}
