@@ -1,5 +1,5 @@
 {
-	"name": "tool_package/rurl",
+	"name": "tool_package/Rurl",
 	"description": "CURL request url(curl 请求 url)",
 	"keywords": ["curl","Rurl","url","访问url","请求url"],
 	"type": "tool-package",
@@ -15,7 +15,7 @@
 	},
 	"autoload": {
 		"psr-4":{
-			"Tools\\": "src/"
+			"ToolPackages\\": "src"
 		}
 	}
 }
