@@ -12,10 +12,38 @@ class Rurl
 	protected $errorInfo = null;
 
 	/**
+	 * 请求结束后回调(主要是为了调试)
+	 * @param $errno 错误码
+	 * @param $error 错误描述
+	 * @param $contents 请求到的内容
+	 */
+	protected $_after;
+
+	protected function __construct()
+	{
+		
+	}
+
+	public static function make()
+	{
+		static::$obj || static::$obj = new static();
+		return static::$obj;
+	}
+
+	/**
+	 * 请求完成后的动作
+	 * @param callable $after
+	 */
+	public function onFinish(callable $after)
+	{
+		$this->_after = $after;
+	}
+
+	/**
 	 * 通过url获取数据
 	 * @param String $url 
-	 * @param Number $maxnum 尝试连接的次数
 	 * @param Array $options curl的option设置
+	 * @param Number $maxnum 尝试连接的次数
 	 */
 	public function exec($url, $options = array(), $maxnum = 2){
 		//set_time_limit(60);
@@ -65,7 +93,10 @@ class Rurl
 			$contents=null;
 		}
 
-		$this -> errorInfo = $start_time . '--' . date('Y-m-d H:i:s  ') . $url . PHP_EOL . $param_str . PHP_EOL . json_encode(['error' => $error,'errno' => $errno]) . PHP_EOL . PHP_EOL;
+		if($this->_after)
+		{
+			$this->_after($errno, $error, $contents);
+		}
 		return $contents;
 	}
 
