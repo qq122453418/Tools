@@ -13,6 +13,8 @@ class Rurl
 
 	/**
 	 * 请求结束后回调(主要是为了调试)
+	 * @param $url 
+	 * @param $param 请求的参数
 	 * @param $errno 错误码
 	 * @param $error 错误描述
 	 * @param $contents 请求到的内容
@@ -95,9 +97,13 @@ class Rurl
 
 		if($this->_after)
 		{
-			$this->_after($errno, $error, $contents);
+			$this->_after($url, $options[CURLOPT_POSTFIELDS], $errno, $error, $contents);
 		}
-		return $contents;
+		return [
+			'errno' => $errno,
+			'error' => $error,
+			'contents' => $contents,
+		];
 	}
 
 	/**
