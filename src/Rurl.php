@@ -24,10 +24,16 @@ class Rurl
     protected $errorMessage = '';
 
     /**
+     * 当前正在使用的uri
+     */
+    private $_currentUri = '';
+
+    /**
      * curl句柄
      * @var handle
      */
-    protected $curl = null;
+    // protected $curl = null;
+    public $curl = null;
 
     /**
      * curl option
@@ -94,7 +100,7 @@ class Rurl
      * 设置curlOption
      * @param array $option 
      */
-    public function setOption($option = [])
+    public function setOptions($option = [])
     {
         $this->curlOptions = $option;
     }
@@ -109,10 +115,10 @@ class Rurl
     }
 
     /**
-     * 设置存储cookie的文件
+     * 设置存储cookie的文件(下次请求会覆盖上次的内容)
      * @param string $filename cookie文件名
      */
-    public function setSaveCookie($filename)
+    public function setCookieJar($filename)
     {
         if(!file_exists($filename))
         {
@@ -139,6 +145,15 @@ class Rurl
     }
 
     /**
+     * 设置cookie保存目录
+     * @param string $path
+     */
+    public function setCookiePath($path)
+    {
+        $this->cookiePath = $path;
+    }
+
+    /**
      * 创建文件
      */
     public function createFile($filename)
@@ -160,6 +175,79 @@ class Rurl
     }
 
     /**
+     * 解析cookie头
+     */
+    public function parseCookieHeader($cookie_header)
+    {
+        $content = substr($cookie_header, 11); 
+        $info_list = explode(';', trim($content));
+        $kv = array_shift($info_list);
+        list($key, $value) = explode('=', $kv);
+        $cookie = [
+            'key' => $key,
+            'value' => $value,
+            'kv' => $kv
+        ];
+        foreach($info_list as $item)
+        {
+            list($k, $v) = explode('=', trim($item));
+            $cookie[$k] = $v;
+        }
+        return $cookie;
+    }
+
+    /**
+     * 回调函数 headerfunction
+     */
+    public function headerFunction($cp, $header)
+    {
+        if(substr($header, 0, 11) === 'Set-Cookie:'){
+            $cookie = $this->parseCookieHeader($header);
+            $cookies = $this->getStoredCookie();
+            $cookies[$cookie['key']] = $cookie;
+            $this->storeCookie($cookies);
+        }
+        return strlen($header);
+    }
+
+    /**
+     * 获取已存储的cookie
+     */
+    protected function getStoredCookie()
+    {
+        $cookie = [];
+        $cookie_file = $this->getCacheCookieFile();
+        if(file_exists($cookie_file))
+        {
+            $data = file_get_contents($cookie_file);
+            $data and $cookie = json_decode($data, true);
+        }
+        return $cookie;
+    }
+
+    /**
+     * 保存cookie
+     */
+    protected function storeCookie($cookies)
+    {
+        $cookie_file = $this->getCacheCookieFile();
+        if(!$file_exists($cookie_file))
+        {
+            $this->createFile($cookie_file);
+        }
+        file_put_contents('cookie_file', json_encode($cookies));
+    }
+
+    /**
+     * 获取缓存cookie_file
+     */
+    protected function getCacheCookieFile()
+    {
+        $data = parse_url($this->_currentUri);
+        return md5(rtrim($this->cookiePath, '\/') . '/' . $data['scheme'].$data['host']); 
+    }
+
+    /**
      * 请求完成后的动作
      * @param callable $after
      */
@@ -176,6 +264,7 @@ class Rurl
      */
     public function exec($url, $options=array(), $maxnum=2)
     {
+        $this->_currentUri = $url;
         //set_time_limit(60);
         $opt = array(
             CURLOPT_URL => $url,
