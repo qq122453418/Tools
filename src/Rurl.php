@@ -369,6 +369,7 @@ class Rurl
                 {
                     $unix_time = intval(strtotime($info['expires']));
                     $unix_time = $unix_time - 3600*8;
+                    
                     if($unix_time > time())
                     {
                         $cookie_list[] = $info['kv'];
