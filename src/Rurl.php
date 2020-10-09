@@ -29,6 +29,21 @@ class Rurl
     private $_currentUri = '';
 
     /**
+     * 解析后 uri 信息
+     */
+    private $_currentUriInfo = [];
+
+    /**
+     * 超时时间（秒）
+     */
+    private $_timeout = 30;
+
+    /**
+     * cookie缓存目录
+     */
+    private $_cookieDir = '';
+
+    /**
      * curl句柄
      * @var handle
      */
@@ -52,15 +67,15 @@ class Rurl
      */
     protected $_after;
 
-    protected function __construct($url = null)
+    protected function __construct()
     {
-        $this->curl = curl_init($url);
+        $this->curl = curl_init();
     }
 
     /**
      * 入口
      */
-    public static function make($url = null)
+    public static function make()
     {
         static::$obj || static::$obj = new static();
         return static::$obj;
@@ -148,9 +163,9 @@ class Rurl
      * 设置cookie保存目录
      * @param string $path
      */
-    public function setCookiePath($path)
+    public function setCookieDir($path)
     {
-        $this->cookiePath = $path;
+        $this->_cookieDir = $path;
     }
 
     /**
@@ -235,7 +250,7 @@ class Rurl
         {
             $this->createFile($cookie_file);
         }
-        file_put_contents('cookie_file', json_encode($cookies));
+        file_put_contents($cookie_file, json_encode($cookies));
     }
 
     /**
@@ -244,7 +259,7 @@ class Rurl
     protected function getCacheCookieFile()
     {
         $data = parse_url($this->_currentUri);
-        return md5(rtrim($this->cookiePath, '\/') . '/' . $data['scheme'].$data['host']); 
+        return rtrim($this->_cookieDir, '\/') . '/' . md5($data['scheme'].$data['host']); 
     }
 
     /**
@@ -265,16 +280,21 @@ class Rurl
     public function exec($url, $options=array(), $maxnum=2)
     {
         $this->_currentUri = $url;
+        $this->_currentUriInfo = parse_url($url);
+        //是否自动发送cookie
+        $this->autoSendCookie();
+        curl_setopt_array($this->curl, $this->curlOptions);
         //set_time_limit(60);
         $opt = array(
             CURLOPT_URL => $url,
-            CURLOPT_TIMEOUT => 30,
+            CURLOPT_TIMEOUT => $this->_timeout,
             CURLOPT_RETURNTRANSFER => true,
         );
-        curl_setopt_array($this->curl, $this->curlOptions);
-        curl_setopt_array($this->curl,$opt);
+        
+        curl_setopt_array($this->curl, $opt);
+
         if($options){
-            curl_setopt_array($this->curl,$options); 
+            curl_setopt_array($this->curl, $options); 
         }
         
         $_arr = parse_url($url);
@@ -320,6 +340,46 @@ class Rurl
             'error' => $error,
             'contents' => $contents,
         ];
+    }
+
+    /**
+     * 缓存cookie
+     */
+    protected function cacheCookie()
+    {
+        if($this->_cookieDir)
+        {
+            $this->curlOptions[CURLOPT_HEADERFUNCTION] = [this, 'headerFunction'];
+        }
+    }
+
+    /**
+     * 自动发送cookie
+     */
+    protected function autoSendCookie()
+    {
+        $cookie_data = $this->getStoredCookie();
+        if($cookie_data)
+        {
+            //不发送超时的 和 跨域的cookie
+            $cookie_list = [];
+            foreach($cookie_data as $info)
+            {
+                if(isset($info['expires']))
+                {
+                    $unix_time = intval(strtotime($info['expires']));
+                    $unix_time = $unix_time - 3600*8;
+                    if($unix_time > time())
+                    {
+                        $cookie_list[] = $info['kv'];
+                    }
+                }
+            }
+            if($cookie_list)
+            {
+                $this->curlOptions[CURLOPT_COOKIE] = implode('; ', $cookie_list);
+            }
+        }
     }
 
     /**
