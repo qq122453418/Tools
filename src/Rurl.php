@@ -222,16 +222,8 @@ class Rurl
         
         if(empty($cookie['path']) || $cookie['path'][0] != '/')
         {
-            $cookie['path'] = '/';
-            if(!empty($this->currentUriInfo['path']))
-            {
-                if(substr($this->currentUriInfo['path'],-1) == '/')
-                {
-                    $dirname = substr($this->currentUriInfo['path'], 0, -1);
-                }
-                $dirname = str_replace('\\', '/', dirname($this->currentUriInfo['path']));
-                $cookie['path'] = $dirname;
-            }
+            $cookie['path'] = $this->getDirname();
+            
         }
         return $cookie;
     }
