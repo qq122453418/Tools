@@ -16,27 +16,32 @@ class Rurl
     /**
      * 错误编码
      */
-    protected $errorNum = 0;
+    public $errorNum = 0;
 
     /**
      * 错误信息
      */
-    protected $errorMessage = '';
+    public $errorMessage = '';
 
     /**
      * 当前正在使用的uri
      */
-    private $_currentUri = '';
+    public $currentUri = '';
 
     /**
      * 解析后 uri 信息
      */
-    private $_currentUriInfo = [];
+    public $currentUriInfo = [];
 
     /**
      * 超时时间（秒）
      */
     private $_timeout = 30;
+
+    /**
+     * 超时重新请求此时
+     */
+    private $_maxRequest = 3;
 
     /**
      * cookie缓存目录
@@ -47,8 +52,13 @@ class Rurl
      * curl句柄
      * @var handle
      */
-    // protected $curl = null;
     public $curl = null;
+
+    /**
+     * 请求成功后的结果
+     * @var text
+     */
+    public $contents;
 
     /**
      * curl option
@@ -56,16 +66,17 @@ class Rurl
      */
     protected $curlOptions = [];
 
+    /**
+     * 请求完成后回调
+     * @param $rurl Rurl实例对象
+     */
+    protected $onFinished;
 
     /**
-     * 请求结束后回调(主要是为了调试)
-     * @param $url 
-     * @param $param 请求的参数
-     * @param $errno 错误码
-     * @param $error 错误描述
-     * @param $contents 请求到的内容
+     * 请求失败后回调
+     * @param $rurl Rurl实例对象
      */
-    protected $_after;
+    protected $onError;
 
     protected function __construct()
     {
@@ -96,7 +107,7 @@ class Rurl
      */
     public function setErrorNum($errno)
     {
-        $this->errorNum = $error;
+        $this->errorNum = $errno;
     }
 
     /**
@@ -208,8 +219,45 @@ class Rurl
             list($k, $v) = explode('=', trim($item));
             $cookie[$k] = $v;
         }
+        
+        if(empty($cookie['path']) || $cookie['path'][0] != '/')
+        {
+            $cookie['path'] = '/';
+            if(!empty($this->currentUriInfo['path']))
+            {
+                if(substr($this->currentUriInfo['path'],-1) == '/')
+                {
+                    $dirname = substr($this->currentUriInfo['path'], 0, -1);
+                }
+                $dirname = str_replace('\\', '/', dirname($this->currentUriInfo['path']));
+                $cookie['path'] = $dirname;
+            }
+        }
         return $cookie;
     }
+
+    /**
+     * 解析url中path的目录
+     * 如果path最后不是以 / 结尾,则最后的名称当做文件名处理
+     * @return string 目录路径
+     */
+    public function getDirname()
+    {
+        if(!empty($this->currentUriInfo['path']))
+        {
+            if(substr($this->currentUriInfo['path'],-1) == '/')
+            {
+                $dirname = substr($this->currentUriInfo['path'], 0, -1);
+            }
+            $dirname = str_replace('\\', '/', dirname($this->currentUriInfo['path']));
+        }
+        else
+        {
+            $dirname = '/';
+        }
+        return $dirname;
+    }
+
 
     /**
      * 回调函数 headerfunction
@@ -246,7 +294,7 @@ class Rurl
     protected function storeCookie($cookies)
     {
         $cookie_file = $this->getCacheCookieFile();
-        if(!$file_exists($cookie_file))
+        if(!file_exists($cookie_file))
         {
             $this->createFile($cookie_file);
         }
@@ -258,17 +306,26 @@ class Rurl
      */
     protected function getCacheCookieFile()
     {
-        $data = parse_url($this->_currentUri);
+        $data = parse_url($this->currentUri);
         return rtrim($this->_cookieDir, '\/') . '/' . md5($data['scheme'].$data['host']); 
     }
 
     /**
      * 请求完成后的动作
-     * @param callable $after
+     * @param callable $action
      */
-    public function onFinish(callable $after)
+    public function setOnFinished(callable $action)
     {
-        $this->_after = $after;
+        $this->onFinished = $action;
+    }
+
+    /**
+     * 请求失败后的动作
+     * @param callable $action
+     */
+    public function setOnError(callable $action)
+    {
+        $this->onError = $action;
     }
 
     /**
@@ -277,12 +334,15 @@ class Rurl
      * @param Array $options curl的option设置
      * @param Number $maxnum 尝试连接的次数
      */
-    public function exec($url, $options=array(), $maxnum=2)
+    public function exec($url, $options=array())
     {
-        $this->_currentUri = $url;
-        $this->_currentUriInfo = parse_url($url);
+        $this->currentUri = $url;
+        $this->currentUriInfo = parse_url($url);
         //是否自动发送cookie
         $this->autoSendCookie();
+        //是否缓存cookie
+        $this->cacheCookie();
+
         curl_setopt_array($this->curl, $this->curlOptions);
         //set_time_limit(60);
         $opt = array(
@@ -297,15 +357,14 @@ class Rurl
             curl_setopt_array($this->curl, $options); 
         }
         
-        $_arr = parse_url($url);
-        if(!empty($_arr['scheme']) && $_arr['scheme'] == 'https'){
+        if(!empty($this->currentUriInfo['scheme']) && $this->currentUriInfo['scheme'] == 'https'){
             curl_setopt($this->curl, CURLOPT_SSL_VERIFYPEER, false);
         }
         $start_time = date('Y-m-d H:i:s');
         $contents = curl_exec($this->curl);
         $num = 1;
         while(curl_errno($this->curl) === 28){
-            if($num >= $maxnum){
+            if($num > $this->_maxRequest){
                 break;
             }
             $num++;
@@ -314,32 +373,35 @@ class Rurl
         }
         $errno = curl_errno($this->curl);
         $error = curl_error($this->curl);
+        $this->setErrorInfo($errno, $error);
         curl_close($this->curl);
         
-        if(isset($options[CURLOPT_POSTFIELDS])){
-            if(is_array($options[CURLOPT_POSTFIELDS])){
-                $param_str = json_encode($options[CURLOPT_POSTFIELDS]);
-            }else{
-                $param_str = $options[CURLOPT_POSTFIELDS];
-            }
-            $param_str = '参数：' . $param_str;
-        }else{
-            $param_str = '';
-        }
+        /* if(isset($options[CURLOPT_POSTFIELDS])){
+         *     if(is_array($options[CURLOPT_POSTFIELDS])){
+         *         $param_str = json_encode($options[CURLOPT_POSTFIELDS]);
+         *     }else{
+         *         $param_str = $options[CURLOPT_POSTFIELDS];
+         *     }
+         *     $param_str = '参数：' . $param_str;
+         * }else{
+         *     $param_str = '';
+         * } */
 
-        if($error){
-            $contents=null;
-        }
-
-        if($this->_after)
+        if($error)
         {
-            $this->_after($url, $options[CURLOPT_POSTFIELDS], $errno, $error, $contents);
+            if($this->onError)
+            {
+                ($this->onError)($this);
+            }
         }
-        return [
-            'errno' => $errno,
-            'error' => $error,
-            'contents' => $contents,
-        ];
+        else
+        {
+            $this->contents = $contents;
+            if($this->onFinished)
+            {
+                ($this->onFinished)($this);
+            }
+        }
     }
 
     /**
@@ -349,7 +411,7 @@ class Rurl
     {
         if($this->_cookieDir)
         {
-            $this->curlOptions[CURLOPT_HEADERFUNCTION] = [this, 'headerFunction'];
+            $this->curlOptions[CURLOPT_HEADERFUNCTION] = [$this, 'headerFunction'];
         }
     }
 
@@ -361,19 +423,12 @@ class Rurl
         $cookie_data = $this->getStoredCookie();
         if($cookie_data)
         {
-            //不发送超时的 和 跨域的cookie
             $cookie_list = [];
             foreach($cookie_data as $info)
             {
-                if(isset($info['expires']))
+                if($this->cookieIsValid($info))
                 {
-                    $unix_time = intval(strtotime($info['expires']));
-                    $unix_time = $unix_time - 3600*8;
-                    
-                    if($unix_time > time())
-                    {
-                        $cookie_list[] = $info['kv'];
-                    }
+                    $cookie_list[] = $info['kv'];
                 }
             }
             if($cookie_list)
@@ -381,6 +436,35 @@ class Rurl
                 $this->curlOptions[CURLOPT_COOKIE] = implode('; ', $cookie_list);
             }
         }
+    }
+
+    /**
+     * 检查cookie 是否有效
+     * @param array $info 一条cookie数据信息
+     */
+    public function cookieIsValid(&$info)
+    {
+        if(isset($info['expires']))
+        {
+            $unix_time = intval(strtotime($info['expires']));
+            $unix_time = $unix_time - 3600*8;
+            
+            if($unix_time <= time())
+            {
+                return false;
+            }
+        }
+        if(!empty($info['path']) && $info['path'] != '/' && $info['path'][0] == '/')
+        {
+            $preg = preg_quote(rtrim($info['path'], '/'), '/');
+            $match_num = preg_match('/^' . $preg . '/', $this->currentUriInfo['path']);
+            if($match_num == 0)
+            {
+                return false;
+            }
+
+        }
+        return true;
     }
 
     /**
