@@ -1,6 +1,6 @@
 <?php
 /******************************************************************************************************************
-** curl 请求网络
+ ** curl 请求网络
 ******************************************************************************************************************/
 namespace ToolPackage;
 
@@ -36,17 +36,17 @@ class Rurl
     /**
      * 超时时间（秒）
      */
-    private $_timeout = 30;
+    public $timeout = 30;
 
     /**
-     * 超时重新请求此时
+     * 超时重新请求次数
      */
-    private $_maxRequest = 3;
+    public $maxRequest = 3;
 
     /**
      * cookie缓存目录
      */
-    private $_cookieDir = '';
+    public $cookieDir = '';
 
     /**
      * curl句柄
@@ -70,15 +70,15 @@ class Rurl
      * 请求完成后回调
      * @param $rurl Rurl实例对象
      */
-    protected $onFinished;
+    public $onFinished;
 
     /**
      * 请求失败后回调
      * @param $rurl Rurl实例对象
      */
-    protected $onError;
+    public $onError;
 
-    protected function __construct()
+    public function __construct()
     {
         $this->curl = curl_init();
     }
@@ -176,7 +176,7 @@ class Rurl
      */
     public function setCookieDir($path)
     {
-        $this->_cookieDir = $path;
+        $this->cookieDir = $path;
     }
 
     /**
@@ -223,7 +223,6 @@ class Rurl
         if(empty($cookie['path']) || $cookie['path'][0] != '/')
         {
             $cookie['path'] = $this->getDirname();
-            
         }
         return $cookie;
     }
@@ -299,7 +298,7 @@ class Rurl
     protected function getCacheCookieFile()
     {
         $data = parse_url($this->currentUri);
-        return rtrim($this->_cookieDir, '\/') . '/' . md5($data['scheme'].$data['host']); 
+        return rtrim($this->cookieDir, '\/') . '/' . md5($data['scheme'].$data['host']); 
     }
 
     /**
@@ -339,7 +338,7 @@ class Rurl
         //set_time_limit(60);
         $opt = array(
             CURLOPT_URL => $url,
-            CURLOPT_TIMEOUT => $this->_timeout,
+            CURLOPT_TIMEOUT => $this->timeout,
             CURLOPT_RETURNTRANSFER => true,
         );
         
@@ -356,7 +355,7 @@ class Rurl
         $contents = curl_exec($this->curl);
         $num = 1;
         while(curl_errno($this->curl) === 28){
-            if($num > $this->_maxRequest){
+            if($num > $this->maxRequest){
                 break;
             }
             $num++;
@@ -401,7 +400,7 @@ class Rurl
      */
     protected function cacheCookie()
     {
-        if($this->_cookieDir)
+        if($this->cookieDir)
         {
             $this->curlOptions[CURLOPT_HEADERFUNCTION] = [$this, 'headerFunction'];
         }
@@ -464,7 +463,26 @@ class Rurl
      */
     public function getErrorInfo()
     {
-        return $this -> errorInfo;
+        return [
+            'error_code' => $this->errorNum,
+            'error_message' => $this->errorMessage
+        ];
+    }
+
+    /**
+     * 获取错误编码
+     */
+    public function getErrorCode()
+    {
+        return $this->errorNum;
+    }
+
+    /**
+     * 获取错误描述
+     */
+    public function getErrorMessage()
+    {
+        return $this->errorMessage;
     }
 
     /**
@@ -472,9 +490,9 @@ class Rurl
      * @param String $url 
      * @param String or Array $param 参数
      */
-    public function setUrlParam($url, $param = array()){
+    public function setUrlParam($url, $param = array())
+    {
         $p = '';
-        
         if(is_array($param)){
             foreach($param as $k=>$v){
                 $p .= "{$k}=".urlencode($v)."&";
@@ -503,9 +521,17 @@ class Rurl
             }
         }
         $new_url .= $query;
-        
         !empty($uinfo['fragment']) && $new_url .= '#'.$uinfo['fragment'];
         return $new_url;
+    }
+
+    /**
+     * 初始化错误
+     */
+    public function errorInit()
+    {
+        $this->errorNum = 0;
+        $this->errorMessage = '';
     }
 
     /**
@@ -513,11 +539,13 @@ class Rurl
      * @param String $url
      * @param $param 字符串 或 数组
      */
-    public function get($url, $param = array(),$opt=array()){
-        $opt[CURLOPT_HTTPGET] = true;
-        $url = $this -> setUrlParam($url, $param);
+    public function get($url, $param = array())
+    {
+        $this->errorInit();
+        $this->curlOptions[CURLOPT_HTTPGET] = true;
+        $url = $this->setUrlParam($url, $param);
         //echo $url;exit;
-        return $this -> exec($url,$opt);
+        return $this->exec($url,$opt);
     }
 
     /**
@@ -525,10 +553,12 @@ class Rurl
      * @param String $url
      * @param $param 数组
      */
-    public function post($url, $param = array(), $opt=array()){
-        $opt[CURLOPT_POST] = true;
-        $opt[CURLOPT_POSTFIELDS] = $param;
-        return $this -> exec($url, $opt);
+    public function post($url, $param = array())
+    {
+        $this->errorInit();
+        $this->curlOptions[CURLOPT_POST] = true;
+        $this->curlOptions[CURLOPT_POSTFIELDS] = $param;
+        return $this -> exec($url);
     }
 
     /**
@@ -537,9 +567,11 @@ class Rurl
      * @param String $method 自定义的传输方式
      * @param $param 数组
      */
-    public function methodInterface($url, $method, $param = array(), $opt = array()){
-        $opt[CURLOPT_CUSTOMREQUEST] = $method;
-        $opt[CURLOPT_POSTFIELDS] = $param;
+    public function methodInterface($url, $method, $param = array())
+    {
+        $this->errorInit();
+        $this->curlOptions[CURLOPT_CUSTOMREQUEST] = $method;
+        $this->curlOptions[CURLOPT_POSTFIELDS] = $param;
         return $this -> exec($url, $opt);
     }
 
