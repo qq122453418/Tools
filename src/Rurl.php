@@ -55,6 +55,11 @@ class Rurl
     public $curl = null;
 
     /**
+     * 响应 头信息
+     */
+    public $headers = [];
+
+    /**
      * 请求成功后的结果
      * @var text
      */
@@ -65,6 +70,13 @@ class Rurl
      * @var array
      */
     protected $curlOptions = [];
+
+    /**
+     * 请求头
+     * @var array key-value格式
+     * 例如: ['Accept-Encoding'=>'gzip, deflate','Accept-Language'=>'zh-CN,zh;q=0.9']
+     */
+    public $requestHeaders = [];
 
     /**
      * 请求完成后回调
@@ -81,6 +93,8 @@ class Rurl
     public function __construct()
     {
         $this->curl = curl_init();
+        $this->curlOptions[CURLOPT_TIMEOUT] = $this->timeout;
+        $this->curlOptions[CURLOPT_RETURNTRANSFER] = true;
     }
 
     /**
@@ -121,24 +135,56 @@ class Rurl
         $this->setErrorMessage($msg);
     }
 
-
     /**
-     * 设置curlOption
-     * @param array $option 
+     * 设置curlOption（多个）
+     * @param array $option
      */
-    public function setOptions($option = [])
+    public function setOptionArray($options = [])
     {
-        $this->curlOptions = $option;
+        $this->curlOptions = array_merge($this->curlOptions, $options);
     }
 
     /**
-     * 设置请求头
+     * 设置curlOption（单个）
+     * @param curl-option-key
+     * @param curl-option-value
+     */
+    public function setOption($curl_option, $value)
+    {
+        $this->curlOptions[$curl_option] = $value;
+    }
+
+    /**
+     * 设置请求头（多个）
      * @param array headers
      */
-    public function setHeaders($headers = [])
+    public function setRequestHeaderArray($headers = [])
     {
+        $this->requestHeaders = array_merge($this->requestHeaders, $headers);
+    }
+    /**
+     * 设置请求头（单个）
+     * @param string $header_name
+     * @param string $value
+     */
+    public function setRequestHeader($header_name, $value)
+    {
+        $this->requestHeaders[$header_name] = $value;
+    }
+
+    /**
+     * 将requestHeaders整合到curl
+     */
+    public function headersToCurl()
+    {
+        $headers = [];
+        foreach($this->requestHeaders as $header_name=>$value)
+        {
+            $headers[] = $header_name . ': ' . $value;
+        }
         $this->curlOptions[CURLOPT_HTTPHEADER] = $headers;
     }
+
 
     /**
      * 设置存储cookie的文件(下次请求会覆盖上次的内容)
@@ -203,10 +249,10 @@ class Rurl
     /**
      * 解析cookie头
      */
-    public function parseCookieHeader($cookie_header)
+    public function parseCookieHeader($cookiestring)
     {
-        $content = substr($cookie_header, 11); 
-        $info_list = explode(';', trim($content));
+        // $cookiestring = substr($cookiestring, 11);
+        $info_list = explode(';', trim($cookiestring, ';'));
         $kv = array_shift($info_list);
         list($key, $value) = explode('=', $kv);
         $cookie = [
@@ -214,12 +260,13 @@ class Rurl
             'value' => $value,
             'kv' => $kv
         ];
+
         foreach($info_list as $item)
         {
             list($k, $v) = explode('=', trim($item));
             $cookie[$k] = $v;
         }
-        
+
         if(empty($cookie['path']) || $cookie['path'][0] != '/')
         {
             $cookie['path'] = $this->getDirname();
@@ -255,11 +302,24 @@ class Rurl
      */
     public function headerFunction($cp, $header)
     {
-        if(substr($header, 0, 11) === 'Set-Cookie:'){
-            $cookie = $this->parseCookieHeader($header);
-            $cookies = $this->getStoredCookie();
-            $cookies[$cookie['key']] = $cookie;
-            $this->storeCookie($cookies);
+
+        $pattern = '/(^\S+):\s*(\S+)/';
+        preg_match($pattern, $header, $matcher);
+        if($matcher)
+        {
+            if(strtolower($matcher[1]) == 'set-cookie')
+            {
+                isset($this->headers['set-cookie']) || $this->headers['set-cookie'] = [];
+                $this->headers['set-cookie'][] = $matcher[2];
+                $cookie = $this->parseCookieHeader($matcher[2]);
+                $cookies = $this->getStoredCookie();
+                $cookies[$cookie['key']] = $cookie;
+                $this->storeCookie($cookies);
+            }
+            else
+            {
+                $this->headers[strtolower($matcher[1])] = $matcher[2];
+            }
         }
         return strlen($header);
     }
@@ -298,7 +358,7 @@ class Rurl
     protected function getCacheCookieFile()
     {
         $data = parse_url($this->currentUri);
-        return rtrim($this->cookieDir, '\/') . '/' . md5($data['scheme'].$data['host']); 
+        return rtrim($this->cookieDir, '\/') . '/' . md5($data['scheme'].$data['host']);
     }
 
     /**
@@ -321,33 +381,24 @@ class Rurl
 
     /**
      * 通过url获取数据
-     * @param String $url 
+     * @param String $url
      * @param Array $options curl的option设置
      * @param Number $maxnum 尝试连接的次数
      */
-    public function exec($url, $options=array())
+    public function exec($url)
     {
+        $this->curlOptions[CURLOPT_URL] = $url;
+
         $this->currentUri = $url;
         $this->currentUriInfo = parse_url($url);
+        //设置request-header
+        $this->headersToCurl();
         //是否自动发送cookie
         $this->autoSendCookie();
         //是否缓存cookie
         $this->cacheCookie();
-
         curl_setopt_array($this->curl, $this->curlOptions);
-        //set_time_limit(60);
-        $opt = array(
-            CURLOPT_URL => $url,
-            CURLOPT_TIMEOUT => $this->timeout,
-            CURLOPT_RETURNTRANSFER => true,
-        );
-        
-        curl_setopt_array($this->curl, $opt);
 
-        if($options){
-            curl_setopt_array($this->curl, $options); 
-        }
-        
         if(!empty($this->currentUriInfo['scheme']) && $this->currentUriInfo['scheme'] == 'https'){
             curl_setopt($this->curl, CURLOPT_SSL_VERIFYPEER, false);
         }
@@ -365,8 +416,7 @@ class Rurl
         $errno = curl_errno($this->curl);
         $error = curl_error($this->curl);
         $this->setErrorInfo($errno, $error);
-        curl_close($this->curl);
-        
+
         /* if(isset($options[CURLOPT_POSTFIELDS])){
          *     if(is_array($options[CURLOPT_POSTFIELDS])){
          *         $param_str = json_encode($options[CURLOPT_POSTFIELDS]);
@@ -387,7 +437,14 @@ class Rurl
         }
         else
         {
-            $this->contents = $contents;
+            if($this->headers['content-encoding'] == 'gzip')
+            {
+                $this->contents = gzdecode($contents);
+            }
+            else
+            {
+                $this->contents = $contents;
+            }
             if($this->onFinished)
             {
                 ($this->onFinished)($this);
@@ -439,7 +496,7 @@ class Rurl
         {
             $unix_time = intval(strtotime($info['expires']));
             $unix_time = $unix_time - 3600*8;
-            
+
             if($unix_time <= time())
             {
                 return false;
@@ -487,7 +544,7 @@ class Rurl
 
     /**
      * 将请求参数放到url上
-     * @param String $url 
+     * @param String $url
      * @param String or Array $param 参数
      */
     public function setUrlParam($url, $param = array())
@@ -501,14 +558,14 @@ class Rurl
         }else if(is_string($param)){
             $p .= $param;
         }
-        
+
         $uinfo = parse_url($url);
         $new_url = '';
         !empty($uinfo['scheme']) && $new_url .= $uinfo['scheme'].'://';
         !empty($uinfo['host']) && $new_url .= $uinfo['host'];
         !empty($uinfo['port']) && $new_url .= ':' . $uinfo['port'];
         !empty($uinfo['path']) && $new_url .= $uinfo['path'];
-        
+
         $query = '';
         if(!empty($uinfo['query'])){
             $query .= '?'.$uinfo['query'];
@@ -532,6 +589,7 @@ class Rurl
     {
         $this->errorNum = 0;
         $this->errorMessage = '';
+        $this->headers = [];
     }
 
     /**
@@ -545,7 +603,7 @@ class Rurl
         $this->curlOptions[CURLOPT_HTTPGET] = true;
         $url = $this->setUrlParam($url, $param);
         //echo $url;exit;
-        return $this->exec($url,$opt);
+        return $this->exec($url);
     }
 
     /**
@@ -572,8 +630,15 @@ class Rurl
         $this->errorInit();
         $this->curlOptions[CURLOPT_CUSTOMREQUEST] = $method;
         $this->curlOptions[CURLOPT_POSTFIELDS] = $param;
-        return $this -> exec($url, $opt);
+        return $this -> exec($url);
     }
 
+    /**
+     * 关闭curl
+     */
+    public function close()
+    {
+        curl_close($this->curl);
+    }
 
 }

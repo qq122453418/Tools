@@ -1,17 +1,17 @@
 {
-	"name": "tool_package/rurl",
+	"name": "tool-package/rurl",
 	"description": "CURL request url(curl 请求 url)",
 	"keywords": ["curl","Rurl","url","访问url","请求url"],
 	"type": "tool-package",
 	"license": "BSD-3-Clause",
 	"authors": [
 		{
-			"name": "xiaofuxing",
+			"name": "fuwang",
 			"email": "122453418@qq.com"
 		}
 	],
 	"require": {
-		"php": ">=5.3"
+		"php": ">=7.1"
 	},
 	"autoload": {
 		"psr-4":{
