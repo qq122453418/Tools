@@ -135,22 +135,6 @@ class Rurl
         $this->setErrorMessage($msg);
     }
 
-<<<<<<< HEAD
-    /**
-     * 设置curlOption（多个）
-     * @param array $option
-     */
-    public function setOptionArray($options = [])
-    {
-        $this->curlOptions = array_merge($this->curlOptions, $options);
-    }
-
-    /**
-     * 设置curlOption（单个）
-     * @param curl-option-key
-     * @param curl-option-value
-     */
-=======
     /**
      * 设置curlOption（多个）
      * @param array $option 
@@ -165,7 +149,6 @@ class Rurl
      * @param curl-option-key
      * @param curl-option-value
      */
->>>>>>> 06e5f3c3f221779beb4298a2166ee4039f662066
     public function setOption($curl_option, $value)
     {
         $this->curlOptions[$curl_option] = $value;
@@ -176,7 +159,6 @@ class Rurl
      * @param array headers
      */
     public function setRequestHeaderArray($headers = [])
-<<<<<<< HEAD
     {
         $this->requestHeaders = array_merge($this->requestHeaders, $headers);
     }
@@ -187,18 +169,6 @@ class Rurl
      */
     public function setRequestHeader($header_name, $value)
     {
-=======
-    {
-        $this->requestHeaders = array_merge($this->requestHeaders, $headers);
-    }
-    /**
-     * 设置请求头（单个）
-     * @param string $header_name
-     * @param string $value
-     */
-    public function setRequestHeader($header_name, $value)
-    {
->>>>>>> 06e5f3c3f221779beb4298a2166ee4039f662066
         $this->requestHeaders[$header_name] = $value;
     }
 
